@@ -13,38 +13,23 @@
 // - RS485 to TTL converter: https://www.aliexpress.com/item/1005001621798947.html
 // - To power from mains: Hi-Link 5V power supply (https://www.aliexpress.com/item/1005001484531375.html), fuseholder and 1A fuse, and varistor
 
-
-#include <SoftwareSerial.h>       // Leave the main serial line (USB) for debugging and flashing
 #include <ModbusMaster.h>         // Modbus master library for ESP8266
 #include <ESP8266WiFi.h>          // Wifi connection
 #include <ESP8266WebServer.h>     // Web server for general HTTP response
 #include <PubSubClient.h>         // MQTT support
 #include <WiFiUdp.h>
-#include <ArduinoOTA.h>
-#include <FastLED.h>
 #include "globals.h"
 #include "settings.h"
+#include <ESP8266HTTPUpdateServer.h>
 
 
 
 os_timer_t myTimer;
 ESP8266WebServer server(80);
+ESP8266HTTPUpdateServer httpUpdater;
 WiFiClient espClient;
 PubSubClient mqtt(mqtt_server, 1883, 0, espClient);
-// SoftwareSerial modbus(MAX485_RX, MAX485_TX, false, 256); //RX, TX
-SoftwareSerial modbus(MAX485_RX, MAX485_TX, false); //RX, TX
 ModbusMaster growatt;
-CRGB leds[NUM_LEDS];
-
-void preTransmission() {
-  digitalWrite(MAX485_RE_NEG, 1);
-  digitalWrite(MAX485_DE, 1);
-}
-
-void postTransmission() {
-  digitalWrite(MAX485_RE_NEG, 0);
-  digitalWrite(MAX485_DE, 0);
-}
 
 void sendModbusError(uint8_t result) {
   String message = "";
@@ -75,7 +60,7 @@ void sendModbusError(uint8_t result) {
   if (message=="") {
     message = result;
   }
-  Serial.println(message);    
+  //Serial.println(message);    
   char topic[80];
   char value[30];
   sprintf(topic,"%s/error",topicRoot);
@@ -88,33 +73,23 @@ void ReadInputRegisters() {
   char topic[80];
   char value[10]; 
 
-  leds[0] = CRGB::Yellow;
-  FastLED.show();
   uint8_t result;
-
-  digitalWrite(STATUS_LED, 0);
 
   ESP.wdtDisable();
   result = growatt.readInputRegisters(setcounter*64,64);
   ESP.wdtEnable(1);
   if (result == growatt.ku8MBSuccess)   {
-
-    leds[0] = CRGB::Green;
-    FastLED.show();
-    lastRGB = millis();
-    ledoff = true;
-    
     #ifdef DEBUG_SERIAL
-      Serial.print("InputReg page");
-      Serial.print(setcounter);
-      Serial.print(": ");
+      //Serial.print("InputReg page");
+      //Serial.print(setcounter);
+      //Serial.print(": ");
     #endif
     sprintf(json,"{");
     for(int i=0;i<64;i++) {
 
       #ifdef DEBUG_SERIAL
         sprintf(value,"%d|",growatt.getResponseBuffer(i));
-        Serial.print(value);
+        //Serial.print(value);
       #endif
       #ifdef DEBUG_MQTT
         sprintf(json,"%s \"r%d\":%d,",json,i,growatt.getResponseBuffer(i));
@@ -124,7 +99,7 @@ void ReadInputRegisters() {
     sprintf(json,"%s \"end\":1 }",json);
 
     #ifdef DEBUG_SERIAL
-      Serial.println();
+      //Serial.println();
     #endif
     #ifdef DEBUG_MQTT
       sprintf(topic,"%s/raw",topicRoot);
@@ -291,29 +266,19 @@ void ReadInputRegisters() {
         sprintf(json,"%s \"warningbitcode\":%d }",json,modbusdata.warningbitcode);
   
         #ifdef DEBUG_SERIAL
-        Serial.println(json);
+        //Serial.println(json);
         #endif
         sprintf(topic,"%s/data",topicRoot);
         mqtt.publish(topic,json);      
-        Serial.println("Data MQTT sent");
+        //Serial.println("Data MQTT sent");
     }
     //sprintf(topic,"%s/error",topicRoot);
     //mqtt.publish(topic,"OK");
 
   } else {
-    leds[0] = CRGB::Red;
-    FastLED.show();
-    lastRGB = millis();
-    ledoff = true;
-
-    Serial.print(F("Error: "));
+    //Serial.print(F("Error: "));
     sendModbusError(result);
-  }
-  digitalWrite(STATUS_LED, 1);
-
-
-
-    
+  }  
 }
 
 void ReadHoldingRegisters() {
@@ -321,34 +286,24 @@ void ReadHoldingRegisters() {
   char topic[80];
   char value[10]; 
 
-
-  leds[0] = CRGB::Yellow;
-  FastLED.show();
   uint8_t result;
   //uint16_t data[6];
 
-  digitalWrite(STATUS_LED, 0);
   ESP.wdtDisable();
   result = growatt.readHoldingRegisters(setcounter*64,64);
   ESP.wdtEnable(1);
   if (result == growatt.ku8MBSuccess)   {
-
-    leds[0] = CRGB::Green;
-    FastLED.show();
-    lastRGB = millis();
-    ledoff = true;
-    
     #ifdef DEBUG_SERIAL
-      Serial.print("HoldingReg Page");
-      Serial.print(setcounter);
-      Serial.print(": ");
+      //Serial.print("HoldingReg Page");
+      //Serial.print(setcounter);
+      //Serial.print(": ");
     #endif
     sprintf(json,"{");
     for(int i=0;i<64;i++) {
 
       #ifdef DEBUG_SERIAL
         sprintf(value,"%d|",growatt.getResponseBuffer(i));
-        Serial.print(value);
+        //Serial.print(value);
       #endif
       #ifdef DEBUG_MQTT
         sprintf(json,"%s \"r%d\":%d,",json,i,growatt.getResponseBuffer(i));
@@ -358,7 +313,7 @@ void ReadHoldingRegisters() {
     
 
     #ifdef DEBUG_SERIAL
-      Serial.println();
+      //Serial.println();
     #endif
     #ifdef DEBUG_MQTT
       sprintf(json,"%s \"end\":1 }",json);
@@ -452,39 +407,26 @@ void ReadHoldingRegisters() {
       sprintf(json,"%s \"serial\":\"%s\" }",json,modbussettings.serial);
 
       #ifdef DEBUG_SERIAL
-      Serial.println(json);
+      //Serial.println(json);
       #endif
       sprintf(topic,"%s/settings",topicRoot);
       mqtt.publish(topic,json);      
-      Serial.println("Setting MQTT sent");
+      //Serial.println("Setting MQTT sent");
       // Set the flag to true not to read the holding registers again
       holdingregisters=true;
     }
     //sprintf(topic,"%s/error",topicRoot);
     //mqtt.publish(topic,"OK");
-
-
   } else {
-    leds[0] = CRGB::Red;
-    FastLED.show();
-    lastRGB = millis();
-    ledoff = true;
-
-    Serial.print(F("Error: "));
+    //Serial.print(F("Error: "));
     sendModbusError(result);
   }
-  digitalWrite(STATUS_LED, 1);
-
-
-    
 }
 
 
 
 // This is the 1 second timer callback function
 void timerCallback(void *pArg) {
-
-  
   seconds++;
 
   // Query the modbus device 
@@ -508,11 +450,9 @@ void timerCallback(void *pArg) {
       sprintf(value,"{\"rssi\": %d, \"uptime\": %d, \"ssid\": \"%s\", \"ip\": \"%d.%d.%d.%d\", \"clientid\":\"%s\", \"version\":\"%s\"}",WiFi.RSSI(),uptime,WiFi.SSID().c_str(),WiFi.localIP()[0],WiFi.localIP()[1],WiFi.localIP()[2],WiFi.localIP()[3],newclientid,buildversion);
       sprintf(topic,"%s/%s",topicRoot,"status");
       mqtt.publish(topic, value);
-      Serial.println(F("MQTT status sent"));
+      //Serial.println(F("MQTT status sent"));
     }
   }
-
-
 }
 
 // MQTT reconnect logic
@@ -520,23 +460,23 @@ void reconnect() {
   //String mytopic;
   // Loop until we're reconnected
   while (!mqtt.connected()) {
-    Serial.print("Attempting MQTT connection...");
+    //Serial.print("Attempting MQTT connection...");
     byte mac[6];                     // the MAC address of your Wifi shield
     WiFi.macAddress(mac);
     sprintf(newclientid,"%s-%02x%02x%02x",clientID,mac[2],mac[1],mac[0]);
-    Serial.print(F("Client ID: "));
-    Serial.println(newclientid);
+    //Serial.print(F("Client ID: "));
+    //Serial.println(newclientid);
     // Attempt to connect
     if (mqtt.connect(newclientid, mqtt_user, mqtt_password)) {
-      Serial.println(F("connected"));
+      //Serial.println(F("connected"));
       // ... and resubscribe
       char topic[80];
       sprintf(topic,"%swrite/#",topicRoot);
       mqtt.subscribe(topic);
     } else {
-      Serial.print(F("failed, rc="));
-      Serial.print(mqtt.state());
-      Serial.println(F(" try again in 5 seconds"));
+      //Serial.print(F("failed, rc="));
+      //Serial.print(mqtt.state());
+      //Serial.println(F(" try again in 5 seconds"));
       // Wait 5 seconds before retrying
       delay(5000);
     }
@@ -546,42 +486,28 @@ void reconnect() {
 
 
 void setup() {
-
-  FastLED.addLeds<LED_TYPE, RGBLED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalSMD5050 );
-  FastLED.setBrightness( BRIGHTNESS );
-  leds[0] = CRGB::Pink;
-  FastLED.show();
-
-  Serial.begin(SERIAL_RATE);
-  Serial.println(F("\nGrowatt Solar Inverter to MQTT Gateway"));
-  // Init outputs, RS485 in receive mode
-  pinMode(MAX485_RE_NEG, OUTPUT);
-  pinMode(MAX485_DE, OUTPUT);
-  pinMode(STATUS_LED, OUTPUT);
-  digitalWrite(MAX485_RE_NEG, 0);
-  digitalWrite(MAX485_DE, 0);
+  //Serial.begin(SERIAL_RATE);
+  //Serial.println(F("\nGrowatt Solar Inverter to MQTT Gateway"));
 
   // Initialize some variables
   uptime = 0;
   seconds = 0;
-  leds[0] = CRGB::Pink;
-  FastLED.show();
 
   // Connect to Wifi
-  Serial.print(F("Connecting to Wifi"));
+  //Serial.print(F("Connecting to Wifi"));
   WiFi.mode(WIFI_STA);
 
   #ifdef FIXEDIP
   // Configures static IP address
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("STA Failed to configure");
+    //Serial.println("STA Failed to configure");
   }
   #endif
   
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(F("."));
+    //Serial.print(F("."));
     seconds++;
     if (seconds>180) {
       // reboot the ESP if cannot connect to wifi
@@ -589,29 +515,28 @@ void setup() {
     }
   }
   seconds = 0;
-  Serial.println("");
-  Serial.println(F("Connected to wifi network"));
-  Serial.print(F("IP address: "));
-  Serial.println(WiFi.localIP());
-  Serial.print(F("Signal [RSSI]: "));
-  Serial.println(WiFi.RSSI());
+  //Serial.println("");
+  //Serial.println(F("Connected to wifi network"));
+  //Serial.print(F("IP address: "));
+  //Serial.println(WiFi.localIP());
+  //Serial.print(F("Signal [RSSI]: "));
+  //Serial.println(WiFi.RSSI());
 
   // Set up the Modbus line
-  growatt.begin(SLAVE_ID , modbus);
+  growatt.begin(SLAVE_ID, Serial);
   // Callbacks allow us to configure the RS485 transceiver correctly
-  growatt.preTransmission(preTransmission);
-  growatt.postTransmission(postTransmission);
-  Serial.println("Modbus connection is set up");
+  //Serial.println("Modbus connection is set up");
 
   // Create the 1 second timer interrupt
   os_timer_setfn(&myTimer, timerCallback, NULL);
   os_timer_arm(&myTimer, 1000, true);
 
   server.on("/", [](){                        // Dummy page
-    server.send(200, "text/plain", "Growatt Solar Inverter to MQTT Gateway");
+    server.send(200, "text/html", "<h1>Growatt Solar Inverter to MQTT Gateway</h1><br/><a href='/firmware'>Update</a>");
   });
+  httpUpdater.setup(&server, "/firmware", update_username, update_password);
   server.begin();
-  Serial.println(F("HTTP server started"));
+  //Serial.println(F("HTTP server started"));
 
   // Set up the MQTT server connection
   if (mqtt_server!="") {
@@ -619,46 +544,14 @@ void setup() {
     mqtt.setBufferSize(1024);
     mqtt.setCallback(callback);
   }
-
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
-
+  
   // Hostname defaults to esp8266-[ChipID]
   byte mac[6];                     // the MAC address of your Wifi shield
   WiFi.macAddress(mac);
   char value[80];
   sprintf(value,"%s-%02x%02x%02x",clientID,mac[2],mac[1],mac[0]);
-  ArduinoOTA.setHostname(value);
 
-  // No authentication by default
-  ArduinoOTA.setPassword((const char *)"esp6161");
-
-  ArduinoOTA.onStart([]() {
-    os_timer_disarm(&myTimer);
-    Serial.println("Start");
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-    os_timer_arm(&myTimer, 1000, true);
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed");
-  });
-  ArduinoOTA.begin();
-
-  modbus.begin(MODBUS_RATE);
-  
-  leds[0] = CRGB::Black;
-  FastLED.show();
-  
+  Serial.begin(MODBUS_RATE);  
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -667,10 +560,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
   payload[length] = '\0'; // Null terminator used to terminate the char array
   String message = (char*)payload;
 
-  Serial.print(F("Message arrived on topic: ["));
-  Serial.print(topic);
-  Serial.print(F("], "));
-  Serial.println(message);
+  //Serial.print(F("Message arrived on topic: ["));
+  //Serial.print(topic);
+  //Serial.print(F("], "));
+  //Serial.println(message);
 
 
 }
@@ -678,7 +571,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void loop() {
   // Handle HTTP server requests
   server.handleClient();
-  ArduinoOTA.handle();
 
   // Handle MQTT connection/reconnection
   if (mqtt_server!="") {
@@ -697,17 +589,9 @@ void loop() {
   if (millis() - lastWifiCheck >= WIFICHECK) {
     // reconnect to the wifi network if connection is lost
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("Reconnecting to wifi...");
+      //Serial.println("Reconnecting to wifi...");
       WiFi.reconnect();
     }
     lastWifiCheck = millis();
   }
-
-  if (ledoff && (millis() - lastRGB >= RGBSTATUSDELAY)) {
-    ledoff = false;
-    leds[0] = CRGB::Black;
-    FastLED.show();
-  }
-
-
 }
