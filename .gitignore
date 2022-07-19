@@ -1,0 +1,3 @@
+*.zip
+Growatt2mqtt_1p2s/*.bin
+Growatt2mqtt_1p2s/settings.h
